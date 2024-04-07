@@ -3,8 +3,8 @@ import time
 from snowflake.snowpark import Session
 from datetime import date
 from snowflake.snowpark.functions import col
-
 from snowpark_process.all_tools import get_readable_curtime
+from concurrent.futures.thread import ThreadPoolExecutor
 
 conn_config = {
     "account": "KFBGAMM-MJB61345",
@@ -47,11 +47,46 @@ def insert_into_orders(session: Session):
         row_df = session.create_dataframe([[id, user_id, order_data, status, _ETL_LOADED_AT]], schema=df.columns)
         row_df.write.mode('append').saveAsTable('raw.jaffle_shop.orders')
     df.filter(col('id') >= id_base).show()
+    time.sleep(2)
+
+def create_orders_stream(session):
+    _ = session.sql("CREATE STREAM raw.jaffle_shop.order_stream ON TABLE raw.jaffle_shop.orders").collect()
+
+
+def consume_order_stream(session: Session):
+    source = session.table('raw.jaffle_shop.order_stream')
+    source.show()
+    script = ("insert into raw.jaffle_shop.delivery_management("
+              "order_id, user_id, received_at, start_delivery_at, finished_delivery_at)"
+              "select id, user_id, current_timestamp(), current_timestamp(), current_timestamp()"
+              "from raw.jaffle_shop.order_stream")
+    session.sql(script).collect()
+    time.sleep(3)
+
+
+def create_delivery_table(session: Session):
+    script = ("CREATE TABLE raw.jaffle_shop.delivery_management( "
+              "id integer autoincrement, order_id integer, user_id integer, "
+              "received_at timestamp, start_delivery_at timestamp, finished_delivery_at timestamp)")
+    session.sql(script).collect()
 
 
 def main(session: Session):
     # create_customer_origin_table(session)
-    insert_into_orders(session)
+    # insert_into_orders(session)
+    # create_orders_stream(session)
+    # create_delivery_table(session)
+    # consume_order_stream(session)
+    process_with_thread(session)
+    pass
+
+
+def process_with_thread(session:Session):
+    tasks = [insert_into_orders, consume_order_stream]
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        for result in tasks:
+            executor.submit(result, session)
+
 
 
 if __name__ == '__main__':
