@@ -49,6 +49,7 @@ def insert_into_orders(session: Session):
     df.filter(col('id') >= id_base).show()
     time.sleep(2)
 
+
 def create_orders_stream(session):
     _ = session.sql("CREATE STREAM raw.jaffle_shop.order_stream ON TABLE raw.jaffle_shop.orders").collect()
 
@@ -81,12 +82,11 @@ def main(session: Session):
     pass
 
 
-def process_with_thread(session:Session):
+def process_with_thread(session: Session):
     tasks = [insert_into_orders, consume_order_stream]
     with ThreadPoolExecutor(max_workers=2) as executor:
         for result in tasks:
             executor.submit(result, session)
-
 
 
 if __name__ == '__main__':
